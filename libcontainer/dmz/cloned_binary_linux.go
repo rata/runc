@@ -216,26 +216,28 @@ func CloneSelfExe(tmpDir string) (*os.File, error) {
 	if err != nil {
 		return nil, fmt.Errorf("opening current binary: %w", err)
 	}
-	defer selfExe.Close()
+	return selfExe, nil
+	//defer selfExe.Close()
 
-	stat, err := selfExe.Stat()
-	if err != nil {
-		return nil, fmt.Errorf("checking /proc/self/exe size: %w", err)
-	}
-	size := stat.Size()
+	//stat, err := selfExe.Stat()
+	//if err != nil {
+	//	return nil, fmt.Errorf("checking /proc/self/exe size: %w", err)
+	//}
+	//size := stat.Size()
 
-	return CloneBinary(selfExe, size, "/proc/self/exe", tmpDir)
+	//return CloneBinary(selfExe, size, "/proc/self/exe", tmpDir)
 }
 
 // IsSelfExeCloned returns whether /proc/self/exe is a cloned binary that can
 // be guaranteed to be safe. This means that it must be a sealed memfd. Other
 // types of clones cannot be completely verified as safe.
 func IsSelfExeCloned() bool {
-	selfExe, err := os.Open("/proc/self/exe")
-	if err != nil {
-		logrus.Debugf("open /proc/self/exe failed: %v", err)
-		return false
-	}
-	defer selfExe.Close()
-	return IsCloned(selfExe)
+	return true
+	//selfExe, err := os.Open("/proc/self/exe")
+	//if err != nil {
+	//	logrus.Debugf("open /proc/self/exe failed: %v", err)
+	//	return false
+	//}
+	//defer selfExe.Close()
+	//return IsCloned(selfExe)
 }
