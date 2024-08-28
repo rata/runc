@@ -140,6 +140,13 @@ func UnsafeCloseFrom(minFd int) error {
 			// don't have any choice.
 			return
 		}
+
+		_, err := unix.FcntlInt(uintptr(fd), unix.F_GET_SEALS, 0)
+		if err == nil {
+			// If the file descriptor is sealed, we cannot close it.
+			return
+		}
+
 		// There's nothing we can do about errors from close(2), and the
 		// only likely error to be seen is EBADF which indicates the fd was
 		// already closed (in which case, we got what we wanted).

@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"runtime"
 
 	"github.com/opencontainers/runtime-spec/specs-go"
 	"github.com/opencontainers/selinux/go-selinux"
@@ -295,9 +294,9 @@ func (l *linuxStandardInit) Init() error {
 	// that all O_CLOEXEC file descriptors have already been closed and thus
 	// the second execve(2) from runc-dmz cannot access internal file
 	// descriptors from runc.
-	//if err := utils.UnsafeCloseFrom(l.config.PassedFilesCount + 4); err != nil {
-	//	return err
-	//}
-	runtime.GC()
+	if err := utils.UnsafeCloseFrom(l.config.PassedFilesCount + 3); err != nil {
+		return err
+	}
+	//runtime.GC()
 	return system.Exec(name, l.config.Args, os.Environ())
 }
