@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"runtime"
 
 	"github.com/opencontainers/selinux/go-selinux"
 	"github.com/sirupsen/logrus"
@@ -14,7 +15,6 @@ import (
 	"github.com/opencontainers/runc/libcontainer/keys"
 	"github.com/opencontainers/runc/libcontainer/seccomp"
 	"github.com/opencontainers/runc/libcontainer/system"
-	"github.com/opencontainers/runc/libcontainer/utils"
 )
 
 // linuxSetnsInit performs the container's initialization for running a new process
@@ -160,8 +160,9 @@ func (l *linuxSetnsInit) Init() error {
 	// that all O_CLOEXEC file descriptors have already been closed and thus
 	// the second execve(2) from runc-dmz cannot access internal file
 	// descriptors from runc.
-	if err := utils.UnsafeCloseFrom(l.config.PassedFilesCount + 3); err != nil {
-		return err
-	}
+	//if err := utils.UnsafeCloseFrom(l.config.PassedFilesCount + 3); err != nil {
+	//	return err
+	//}
+	runtime.GC()
 	return system.Exec(name, l.config.Args, os.Environ())
 }
