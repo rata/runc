@@ -90,7 +90,7 @@ func (p *setnsProcess) start() (retErr error) {
 		return fmt.Errorf("error starting setns process: %w", err)
 	}
 
-	waitInit := initWaiter(p.messageSockPair.parent)
+	waitInit, childContinue := initWaiter(p.messageSockPair.parent)
 	defer func() {
 		if retErr != nil {
 			if newOom, err := p.manager.OOMKillCount(); err == nil && newOom != oom {
@@ -142,6 +142,13 @@ func (p *setnsProcess) start() (retErr error) {
 				return fmt.Errorf("error adding pid %d to cgroups: %w", p.pid(), err)
 			}
 		}
+	}
+	// Process in the cgroup now, the child can continue.
+	// XXX: rata. TODO: verify error paths are happy and no process is hanging.
+	childContinue <- struct{}{}
+	err = <-waitInit
+	if err != nil {
+		return err
 	}
 	if p.intelRdtPath != "" {
 		// if Intel RDT "resource control" filesystem path exists
@@ -367,7 +374,7 @@ func (p *initProcess) start() (retErr error) {
 		return fmt.Errorf("unable to start init: %w", err)
 	}
 
-	waitInit := initWaiter(p.messageSockPair.parent)
+	waitInit, childContinue := initWaiter(p.messageSockPair.parent)
 	defer func() {
 		if retErr != nil {
 			// Find out if init is killed by the kernel's OOM killer.
@@ -390,6 +397,7 @@ func (p *initProcess) start() (retErr error) {
 				}
 			}
 
+			// TODO: we probably need to send on cont too, for the goroutine to exit.
 			werr := <-waitInit
 			if werr != nil {
 				logrus.WithError(werr).Warn()
@@ -414,12 +422,18 @@ func (p *initProcess) start() (retErr error) {
 		return err
 	}
 
-	// Do this before syncing with child so that no children can escape the
+	// Do this before the child can continue, so that no children can escape the
 	// cgroup. We don't need to worry about not doing this and not being root
 	// because we'd be using the rootless cgroup manager in that case.
 	if err := p.manager.Apply(p.pid()); err != nil {
 		return fmt.Errorf("unable to apply cgroup configuration: %w", err)
 	}
+	childContinue <- struct{}{}
+	err = <-waitInit
+	if err != nil {
+		return err
+	}
+
 	if p.intelRdtManager != nil {
 		if err := p.intelRdtManager.Apply(p.pid()); err != nil {
 			return fmt.Errorf("unable to apply Intel RDT configuration: %w", err)
@@ -802,25 +816,38 @@ func (p *Process) InitializeIO(rootuid, rootgid int) (i *IO, err error) {
 
 // initWaiter returns a channel to wait on for making sure
 // runc init has finished the initial setup.
-func initWaiter(r io.Reader) chan error {
+func initWaiter(r io.ReadWriteCloser) (chan error, chan struct{}) {
 	ch := make(chan error, 1)
+	cont := make(chan struct{}, 1)
 	go func() {
 		defer close(ch)
+		defer close(cont)
 
 		inited := make([]byte, 1)
 		n, err := r.Read(inited)
-		if err == nil {
-			if n < 1 {
-				err = errors.New("short read")
-			} else if inited[0] != 0 {
-				err = fmt.Errorf("unexpected %d != 0", inited[0])
-			} else {
-				ch <- nil
-				return
-			}
+		if err != nil {
+			ch <- fmt.Errorf("waiting for init preliminary setup: %w", err)
+			return
 		}
-		ch <- fmt.Errorf("waiting for init preliminary setup: %w", err)
+		if n < 1 {
+			ch <- errors.New("short read")
+			return
+		} else if inited[0] != 0 {
+			ch <- fmt.Errorf("unexpected %d != 0", inited[0])
+			return
+		} else {
+			ch <- nil
+		}
+
+		// We can continue when the caller send on this ch.
+		<-cont
+		n, err = r.Write([]byte{0x01})
+		if err != nil {
+			ch <- fmt.Errorf("signaling init process step 2: %w", err)
+			return
+		}
+		ch <- nil
 	}()
 
-	return ch
+	return ch, cont
 }

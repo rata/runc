@@ -890,6 +890,13 @@ void nsexec(void)
 	if (write(pipenum, "", 1) != 1)
 		bail("could not inform the parent we are past initial setup");
 
+	/* Wait for the parent to confirm we can continue */
+	uint8_t buf;
+	if (read(pipenum, &buf, 1) != 1)
+		bail("could not receive from the parent we can continue");
+	if (buf != 1)
+		bail("parent did not confirm we can continue, expected 1, got %hhx", buf);
+
 	write_log(DEBUG, "=> nsexec container setup");
 
 	/* Parse all of the netlink configuration. */
