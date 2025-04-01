@@ -24,6 +24,8 @@ func prepareEnv(env []string, uid int) ([]string, error) {
 	if env == nil {
 		return nil, nil
 	}
+	var homeIsSet bool
+
 	// Deduplication code based on dedupEnv from Go 1.22 os/exec.
 
 	// Construct the output in reverse order, to preserve the
@@ -40,6 +42,7 @@ func prepareEnv(env []string, uid int) ([]string, error) {
 			return nil, errors.New("invalid environment variable: name cannot be empty")
 		}
 		key := kv[:i]
+		val := kv[i+1:]
 		if saw[key] { // Duplicate.
 			continue
 		}
@@ -49,8 +52,16 @@ func prepareEnv(env []string, uid int) ([]string, error) {
 		}
 		if key == "PATH" {
 			// Needs to be set as it is used for binary lookup.
-			if err := os.Setenv("PATH", kv[i+1:]); err != nil {
+			if err := os.Setenv("PATH", val); err != nil {
 				return nil, err
+			}
+		}
+		if key == "HOME" {
+			if val != "" {
+				homeIsSet = true
+			} else if val == "" {
+				// Don't add empty HOME to the environment, we will override it later.
+				continue
 			}
 		}
 		out = append(out, kv)
@@ -59,7 +70,7 @@ func prepareEnv(env []string, uid int) ([]string, error) {
 	slices.Reverse(out)
 
 	// If HOME is not found in env, get it from container's /etc/passwd and add.
-	if !saw["HOME"] {
+	if !homeIsSet {
 		home, err := getUserHome(uid)
 		if err != nil {
 			// For backward compatibility, don't return an error, but merely log it.
